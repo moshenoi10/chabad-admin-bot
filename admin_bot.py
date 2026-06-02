@@ -19,7 +19,45 @@ def save_clients(clients):
         pickle.dump(clients, f)
 
 clients = load_clients()
-sessions = {}  # session של הגדרת לקוח חדש
+sessions = {}
+
+def init_default_client():
+    """מוסיף את חב״ד כלקוח ראשון אם אין לקוחות"""
+    if clients:
+        return
+    chabad_id = "client_chabad"
+    clients[chabad_id] = {
+        "id": chabad_id,
+        "name": "עדכוני חב״ד",
+        "created": datetime.now().strftime("%d/%m/%Y"),
+        "active": True,
+        "package": "premium",
+        "custom_price": 0,
+        "features": list(FEATURE_NAMES.keys()),
+        "is_owner": True,
+        "config": {
+            "TELEGRAM_TOKEN": os.environ.get("CHABAD_BOT_TOKEN", ""),
+            "WP_SITE_URL": "https://chabadupdates.com",
+            "WP_URL": "https://chabadupdates.com/wp-json/wp/v2",
+            "WP_USER": os.environ.get("CHABAD_WP_USER", ""),
+            "WP_PASSWORD": os.environ.get("CHABAD_WP_PASSWORD", ""),
+            "CHANNEL_ID": os.environ.get("CHABAD_CHANNEL_ID", "-1003967710127"),
+            "SITE_NAME": "עדכוני חב\"ד",
+            "GEMINI_API_KEY": os.environ.get("CHABAD_GEMINI_KEY", ""),
+            "FB_PAGE_TOKEN": os.environ.get("CHABAD_FB_TOKEN", ""),
+            "FB_PAGE_ID": os.environ.get("CHABAD_FB_PAGE_ID", "680408318766283"),
+            "IG_USER_ID": os.environ.get("CHABAD_IG_USER_ID", "17841444209386916"),
+            "WHATSAPP_GROUP_ID": os.environ.get("CHABAD_WA_GROUP", ""),
+            "VIMEO_TOKEN": os.environ.get("CHABAD_VIMEO_TOKEN", ""),
+            "SUPER_ADMIN_ID": os.environ.get("ADMIN_ID", "1798097090"),
+            "GREENAPI_ID": os.environ.get("CHABAD_GREENAPI_ID", ""),
+            "GREENAPI_TOKEN": os.environ.get("CHABAD_GREENAPI_TOKEN", ""),
+        }
+    }
+    save_clients(clients)
+    print("✅ לקוח חב״ד נוצר אוטומטית", flush=True)
+
+  # session של הגדרת לקוח חדש
 offset = 0
 
 # ─── חבילות ────────────────────────────────────────────
@@ -181,6 +219,35 @@ def handle_session(chat_id, text, msg):
                 [{"text": "⚙️ מותאם אישית", "callback_data": "pkg_custom"}]
             ]
         })
+
+
+    elif step == "edit_price":
+        try:
+            clients[session["client_id"]]["custom_price"] = int(text)
+            save_clients(clients)
+            send(chat_id, f"✅ מחיר עודכן ל-₪{text}/חודש")
+            show_client(chat_id, session["client_id"])
+        except:
+            send(chat_id, "⚠️ שלח מספר תקין")
+        del sessions[chat_id]
+        return True
+    
+    elif step == "edit_token":
+        clients[session["client_id"]]["config"]["TELEGRAM_TOKEN"] = text
+        save_clients(clients)
+        send(chat_id, "✅ טוקן עודכן!")
+        show_client(chat_id, session["client_id"])
+        del sessions[chat_id]
+        return True
+    
+    elif step == "edit_url":
+        clients[session["client_id"]]["config"]["WP_SITE_URL"] = text.rstrip("/")
+        clients[session["client_id"]]["config"]["WP_URL"] = text.rstrip("/") + "/wp-json/wp/v2"
+        save_clients(clients)
+        send(chat_id, "✅ כתובת אתר עודכנה!")
+        show_client(chat_id, session["client_id"])
+        del sessions[chat_id]
+        return True
 
     elif step == "facebook_token":
         data["fb_token"] = "" if text == "/skip" else text
@@ -410,6 +477,44 @@ def handle_callback(cb):
                      {"text": "❌ ביטול", "callback_data": f"client_{client_id}"}]
                 ]
             })
+
+    elif data.startswith("edit_price_"):
+        client_id = data[11:]
+        sessions[chat_id] = {"step": "edit_price", "client_id": client_id}
+        send(chat_id, "💰 שלח מחיר חדש בשקלים:")
+    
+    elif data.startswith("edit_token_"):
+        client_id = data[11:]
+        sessions[chat_id] = {"step": "edit_token", "client_id": client_id}
+        send(chat_id, "🔑 שלח טוקן בוט חדש:")
+    
+    elif data.startswith("edit_url_"):
+        client_id = data[9:]
+        sessions[chat_id] = {"step": "edit_url", "client_id": client_id}
+        send(chat_id, "🌐 שלח כתובת אתר חדשה:")
+    
+    elif data.startswith("edit_package_"):
+        client_id = data[13:]
+        sessions[chat_id] = {"step": "change_package", "client_id": client_id}
+        send(chat_id, "📦 בחר חבילה חדשה:", {
+            "inline_keyboard": [
+                [{"text": "⭐ בסיסי – ₪99", "callback_data": f"setpkg_basic_{client_id}"}],
+                [{"text": "🌟 מתקדם – ₪199", "callback_data": f"setpkg_advanced_{client_id}"}],
+                [{"text": "💎 פרימיום – ₪299", "callback_data": f"setpkg_premium_{client_id}"}],
+            ]
+        })
+    
+    elif data.startswith("setpkg_"):
+        parts = data[7:].split("_", 1)
+        pkg, client_id = parts[0], parts[1]
+        c = clients.get(client_id)
+        if c:
+            c["package"] = pkg
+            c["features"] = PACKAGES[pkg]["features"]
+            save_clients(clients)
+            send(chat_id, f"✅ חבילה עודכנה ל-{PACKAGES[pkg]['name']}")
+            show_client(chat_id, client_id)
+
     elif data.startswith("confirm_delete_"):
         client_id = data[15:]
         name = clients.get(client_id, {}).get("name", "")
@@ -487,6 +592,7 @@ def run_http():
 def main():
     global offset
     print("🚀 Admin Bot פועל!", flush=True)
+    init_default_client()
     threading.Thread(target=run_http, daemon=True).start()
     while True:
         try:
