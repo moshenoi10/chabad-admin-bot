@@ -112,6 +112,7 @@ def render_create_service(service_name, env_vars):
             "branch": "main",
             "plan": "free",
             "region": "frankfurt",
+            "runtime": "python",
             "serviceDetails": {
                 "buildCommand": "pip install -r requirements.txt",
                 "startCommand": "python bot.py",
