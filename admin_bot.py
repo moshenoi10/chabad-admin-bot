@@ -474,9 +474,20 @@ def handle_message(msg):
         handle_session(chat_id, text, msg)
         return
 
+def run_http():
+    from http.server import HTTPServer, BaseHTTPRequestHandler
+    class H(BaseHTTPRequestHandler):
+        def do_GET(self):
+            self.send_response(200)
+            self.end_headers()
+            self.wfile.write(b"Admin Bot OK")
+        def log_message(self, *args): pass
+    HTTPServer(("0.0.0.0", int(os.environ.get("PORT", 8080))), H).serve_forever()
+
 def main():
     global offset
     print("🚀 Admin Bot פועל!", flush=True)
+    threading.Thread(target=run_http, daemon=True).start()
     while True:
         try:
             resp = requests.get(
